@@ -1,38 +1,38 @@
 # Support Copilot
 
-Support Copilot is a backend-only support automation prototype that demonstrates two agent workflows:
+Support Copilot 是一个后端客服 Agent 原型项目，用来展示两个核心工作流：
 
-- An Agentic RAG agent that retrieves support knowledge, filters low-confidence matches, returns grounded answers with citations, and refuses to guess when the knowledge base does not cover the question.
-- A LangGraph triage agent that classifies support requests and routes them to a RAG answer, human escalation, or a general scope response.
+- Agentic RAG Agent：从客服知识库检索相关内容，过滤低相关度结果，返回带引用来源的回答；当知识库没有覆盖问题时，会明确拒绝猜测。
+- LangGraph Triage Agent：对客服请求做分类和分诊，并把问题路由到 RAG 回答、人工升级或普通范围说明。
 
-The project is intentionally focused on backend agent behavior. It does not include a frontend, user login, background workers, Celery, or Redis.
+项目刻意聚焦后端 Agent 能力，不包含前端页面、用户登录、后台任务队列、Celery 或 Redis。
 
-## Features
+## 功能亮点
 
-- FastAPI service with typed request and response models
-- PostgreSQL with pgvector for support knowledge storage and vector retrieval
-- Deterministic local fallback mode for demos without external LLM calls
-- OpenAI-compatible LLM configuration for real model calls
-- LangGraph workflow trace output for triage decisions
-- No-answer handling when retrieved context is not relevant enough
-- RAGAS evaluation script for RAG quality checks
-- Docker Compose setup for the API and pgvector database
+- 基于 FastAPI 的后端 API，包含类型化请求和响应模型
+- 使用 PostgreSQL + pgvector 存储和检索客服知识库
+- 默认支持本地 fallback 模式，无需外部 LLM Key 也能演示核心流程
+- 支持 OpenAI-compatible 模型配置，用于真实模型调用
+- LangGraph 分诊流程会返回图执行轨迹，方便观察路由路径
+- RAG 无相关证据时会返回 no-answer，不编造客服政策
+- 内置 RAGAS 评估脚本，用于检查 RAG 回答质量
+- 提供 Docker Compose，一键启动 API 和 pgvector 数据库
 
-## Architecture
+## 架构
 
 ```mermaid
 flowchart TD
-    intake["intake: receive support request"] --> classify["classify: category, priority, action"]
-    classify --> route["route: choose handling path"]
-    route -->|answer| rag_answer["rag_answer: call Agentic RAG"]
-    route -->|escalate| escalate["escalate: prepare human handoff"]
-    route -->|general| general_response["general_response: return scope guidance"]
-    rag_answer --> final["final: unified response"]
+    intake["intake: 接收客服请求"] --> classify["classify: 判断类别、优先级和动作"]
+    classify --> route["route: 选择处理路径"]
+    route -->|answer| rag_answer["rag_answer: 调用 Agentic RAG"]
+    route -->|escalate| escalate["escalate: 生成转人工摘要"]
+    route -->|general| general_response["general_response: 返回范围说明"]
+    rag_answer --> final["final: 统一响应"]
     escalate --> final
     general_response --> final
 ```
 
-## Tech Stack
+## 技术栈
 
 - Python
 - FastAPI
@@ -44,26 +44,26 @@ flowchart TD
 - Docker Compose
 - pytest
 
-## Project Layout
+## 项目结构
 
 ```text
 .
 |-- backend/
 |   |-- app/
-|   |   |-- agent/              # Agentic RAG and LangGraph triage agents
-|   |   |-- data/               # Built-in demo support knowledge
-|   |   |-- config.py           # Environment-based settings
-|   |   |-- llm_router.py       # LLM and fallback routing
-|   |   |-- main.py             # FastAPI application
-|   |   |-- models.py           # Internal data models
-|   |   |-- postgres_store.py   # pgvector and in-memory knowledge stores
-|   |   `-- schemas.py          # API request and response schemas
-|   |-- eval/                   # RAGAS evaluation cases and runner
-|   |-- tests/                  # Agent behavior tests
+|   |   |-- agent/              # Agentic RAG 和 LangGraph 分诊 Agent
+|   |   |-- data/               # 内置 demo 客服知识库
+|   |   |-- config.py           # 环境变量配置
+|   |   |-- llm_router.py       # LLM 与 fallback 路由
+|   |   |-- main.py             # FastAPI 应用入口
+|   |   |-- models.py           # 内部数据模型
+|   |   |-- postgres_store.py   # pgvector 与内存知识库实现
+|   |   `-- schemas.py          # API 请求和响应 schema
+|   |-- eval/                   # RAGAS 评估用例和运行脚本
+|   |-- tests/                  # Agent 行为测试
 |   |-- Dockerfile
 |   `-- requirements.txt
 |-- db/
-|   `-- 001_init_pgvector.sql   # Database schema and vector index setup
+|   `-- 001_init_pgvector.sql   # 数据库表结构和向量索引
 |-- docs/
 |   |-- MODULES.md
 |   `-- RUNBOOK.md
@@ -71,44 +71,44 @@ flowchart TD
 `-- README.md
 ```
 
-## Quick Start
+## 快速开始
 
-Copy the environment template:
+复制环境变量模板：
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Start the API and database:
+启动 API 和数据库：
 
 ```powershell
 docker compose up --build --remove-orphans
 ```
 
-The API will be available at:
+服务启动后可以访问：
 
 - `http://127.0.0.1:8000`
-- Swagger UI: `http://127.0.0.1:8000/docs`
+- Swagger UI：`http://127.0.0.1:8000/docs`
 
-Check service health:
+健康检查：
 
 ```powershell
 Invoke-RestMethod -Uri "http://127.0.0.1:8000/health"
 ```
 
-Load the built-in support knowledge base:
+导入内置客服知识库：
 
 ```powershell
 Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/knowledge/ingest-demo"
 ```
 
-## API Examples
+## API 示例
 
-Query the Agentic RAG agent:
+调用 Agentic RAG Agent：
 
 ```powershell
 $body = @{
-  question = "What does an API 429 response mean?"
+  question = "API 一直返回 429 是什么意思？"
   top_k = 5
 } | ConvertTo-Json
 
@@ -119,11 +119,11 @@ Invoke-RestMethod `
   -Body $body
 ```
 
-Invoke the LangGraph triage agent:
+调用 LangGraph Triage Agent：
 
 ```powershell
 $body = @{
-  message = "API keeps returning 429. What should I do?"
+  message = "API 一直返回 429，我应该怎么处理？"
 } | ConvertTo-Json
 
 Invoke-RestMethod `
@@ -133,17 +133,17 @@ Invoke-RestMethod `
   -Body $body
 ```
 
-Read the triage graph metadata:
+查看分诊图元数据：
 
 ```powershell
 Invoke-RestMethod -Uri "http://127.0.0.1:8000/agents/triage/graph"
 ```
 
-## LLM Configuration
+## LLM 配置
 
-By default, `.env.example` sets `LLM_ENABLE_CALLS=false`. In that mode, the project uses local fallback behavior and does not call an external model, which keeps the demo runnable without an API key.
+`.env.example` 默认设置为 `LLM_ENABLE_CALLS=false`。在这个模式下，项目会使用本地 fallback 逻辑，不会调用外部模型，因此没有 API Key 也可以运行 demo。
 
-To use an OpenAI-compatible provider, update `.env`:
+如果要接入 OpenAI-compatible 模型，可以修改 `.env`：
 
 ```text
 LLM_PROVIDER=qwen
@@ -153,13 +153,13 @@ LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 LLM_ENABLE_CALLS=true
 ```
 
-Do not commit real API keys. Keep local secrets in `.env`, which is ignored by Git.
+不要提交真实 API Key。真实密钥应只放在本地 `.env` 中，`.env` 已经被 Git 忽略。
 
-## Evaluation
+## 评估
 
-The RAGAS runner imports the demo knowledge base, invokes the triage agent on evaluation cases, skips non-RAG cases, and reports RAG metrics.
+RAGAS 评估脚本会导入 demo 知识库，调用分诊 Agent 跑评估用例，跳过非 RAG 类型用例，并输出 RAG 指标。
 
-RAGAS evaluation requires a real evaluator model. Configure `.env` first:
+RAGAS 评估需要真实评审模型。运行前先配置 `.env`：
 
 ```text
 LLM_ENABLE_CALLS=true
@@ -169,36 +169,36 @@ LLM_CHAT_MODEL=qwen3.5-flash
 RAGAS_DO_NOT_TRACK=true
 ```
 
-Run:
+运行评估：
 
 ```powershell
 python backend\eval\run_eval.py
 ```
 
-The report includes:
+评估报告包括：
 
 - context precision
 - context recall
 - faithfulness
 - factual correctness
-- skipped non-RAG cases
-- average agent latency
+- 跳过的非 RAG 用例
+- 平均 Agent 延迟
 
-## Tests
+## 测试
 
-Install dependencies and run the backend tests:
+安装依赖并运行后端测试：
 
 ```powershell
 pip install -r backend\requirements.txt
 pytest backend
 ```
 
-The current tests cover RAG citation behavior, no-answer behavior, knowledge question routing, and human escalation routing.
+当前测试覆盖 RAG 命中引用、无答案处理、知识库问题路由和人工升级路由。
 
-## Notes
+## 注意事项
 
-- `.env`, `.venv/`, cache directories, build artifacts, and logs are excluded from Git.
-- Existing database volumes may need the initialization script re-run if the schema changed:
+- `.env`、`.venv/`、缓存目录、构建产物和日志目录不会提交到 Git。
+- 如果复用了旧数据库 volume，schema 变更后可能需要手动重新执行初始化脚本：
 
 ```powershell
 docker compose exec -T postgres psql -U support -d support_copilot -f /docker-entrypoint-initdb.d/001_init_pgvector.sql
