@@ -21,8 +21,7 @@ class AgenticRagAgent:
         self.min_score = settings.rag_min_score if min_score is None else min_score
 
     def query(self, question: str, top_k: int = 5) -> RagResult:
-        retrieved = self.store.search_knowledge(question, limit=top_k)
-        relevant = self._grade_documents(retrieved)
+        relevant = self.retrieve(question, top_k=top_k)
         if not relevant:
             return RagResult(
                 answer="知识库未覆盖该问题。为了避免编造答案，我不会基于猜测回复；建议补充相关文档或升级给人工支持处理。",
@@ -38,6 +37,10 @@ class AgenticRagAgent:
             confidence=self._confidence(relevant),
             no_answer_reason=None,
         )
+
+    def retrieve(self, question: str, top_k: int = 5) -> list[SearchResult]:
+        retrieved = self.store.search_knowledge(question, limit=top_k)
+        return self._grade_documents(retrieved)
 
     def _grade_documents(self, documents: list[SearchResult]) -> list[SearchResult]:
         return [document for document in documents if document.score >= self.min_score]

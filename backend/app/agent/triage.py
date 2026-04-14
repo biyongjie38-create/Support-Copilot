@@ -6,17 +6,17 @@ from typing import TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from app.agent.rag import AgenticRagAgent
-from app.llm_router import TriageClassifier
+from app.llm_router import TriageClassifier, TriageRouter, is_llm_unavailable_decision
 from app.models import TriageDecision, TriageResult
 from app.postgres_store import KnowledgeStore
 
 
 TRIAGE_GRAPH_MERMAID = """flowchart TD
-    intake["intake: 接收用户问题"] --> classify["classify: 判断问题类别、优先级和动作"]
-    classify --> route["route: 按动作选择处理路径"]
+    intake["intake: 接收用户问题"] --> classify["classify: LLM 理解用户意图并给出初判"]
+    classify --> route["route: LLM 结合知识候选决定处理路径"]
     route -->|answer| rag_answer["rag_answer: 调用 Agentic RAG"]
     route -->|escalate| escalate["escalate: 生成人工升级摘要"]
-    route -->|general| general_response["general_response: 给出范围说明"]
+    route -->|general| general_response["general_response: 给出范围说明或等待处理"]
     rag_answer --> final["final: 输出统一结果"]
     escalate --> final
     general_response --> final
@@ -25,11 +25,11 @@ TRIAGE_GRAPH_MERMAID = """flowchart TD
 
 TRIAGE_GRAPH_NODES = {
     "intake": "接收用户输入，并记录图执行轨迹。",
-    "classify": "使用 LangChain 分类链判断 category、priority、action 和 reason。",
-    "route": "根据 action 把问题路由到 RAG、人工升级或普通回复。",
+    "classify": "使用 LLM 理解用户问题，生成 category、priority、action 和 reason 的初判。",
+    "route": "使用 LLM 结合初判和知识库候选，选择 answer、escalate 或 general。",
     "rag_answer": "调用 Agentic RAG Agent，基于知识库生成带引用的答案。",
-    "escalate": "对投诉、安全、严重故障和明确人工诉求生成结构化升级回复。",
-    "general_response": "对寒暄或知识库范围外问题给出边界说明，不编造客服政策。",
+    "escalate": "对投诉、安全、支付异常、严重故障等场景生成结构化人工升级回复。",
+    "general_response": "对范围外问题给出边界说明；若 LLM 不可用，则直接告知等待处理。",
     "final": "统一输出 category、priority、action、answer、citations 和 graph_trace。",
 }
 
@@ -46,10 +46,12 @@ class LangGraphTriageAgent:
         self,
         store: KnowledgeStore,
         classifier: TriageClassifier | None = None,
+        router: TriageRouter | None = None,
         rag_agent: AgenticRagAgent | None = None,
     ) -> None:
         self.store = store
         self.classifier = classifier or TriageClassifier()
+        self.router = router or TriageRouter()
         self.rag_agent = rag_agent or AgenticRagAgent(store)
         self.graph = self._build_graph()
 
@@ -94,8 +96,18 @@ class LangGraphTriageAgent:
         }
 
     def _route_node(self, state: TriageState) -> TriageState:
-        decision = state["decision"]
-        return {"graph_trace": self._trace(state, f"route: 选择 {decision.action} 路径，原因：{decision.reason}")}
+        preliminary_decision = state["decision"]
+        documents = []
+        if not is_llm_unavailable_decision(preliminary_decision):
+            documents = self.rag_agent.retrieve(state["message"], top_k=3)
+        decision = self.router.choose_route(state["message"], preliminary_decision, documents)
+        return {
+            "decision": decision,
+            "graph_trace": self._trace(
+                state,
+                f"route: 选择 {decision.action} 路径，原因：{decision.reason}",
+            ),
+        }
 
     def _route_after_decision(self, state: TriageState) -> str:
         return state["decision"].action
@@ -103,6 +115,7 @@ class LangGraphTriageAgent:
     def _rag_answer_node(self, state: TriageState) -> TriageState:
         decision = state["decision"]
         rag_result = self.rag_agent.query(state["message"])
+        trace = self._trace(state, f"rag_answer: 返回 {len(rag_result.citations)} 条引用")
         return {
             "result": TriageResult(
                 category=decision.category,
@@ -110,9 +123,9 @@ class LangGraphTriageAgent:
                 action="answer",
                 answer=rag_result.answer,
                 citations=rag_result.citations,
-                graph_trace=self._trace(state, f"rag_answer: 返回 {len(rag_result.citations)} 条引用"),
+                graph_trace=trace,
             ),
-            "graph_trace": self._trace(state, f"rag_answer: 返回 {len(rag_result.citations)} 条引用"),
+            "graph_trace": trace,
         }
 
     def _escalate_node(self, state: TriageState) -> TriageState:
@@ -136,8 +149,11 @@ class LangGraphTriageAgent:
 
     def _general_response_node(self, state: TriageState) -> TriageState:
         decision = state["decision"]
-        answer = "这是普通咨询或当前客服知识库范围外的问题。请补充一个具体的账号、账单、发票、API 或故障类支持问题。"
-        trace = self._trace(state, "general_response: 返回范围说明")
+        if is_llm_unavailable_decision(decision):
+            answer = "当前 LLM 不可用，暂时无法自动理解用户问题并选择处理路由，请稍后重试或等待人工处理。"
+        else:
+            answer = "这是普通咨询或当前客服知识库范围外的问题。请补充一个具体的账号、账单、发票、API 或故障类支持问题。"
+        trace = self._trace(state, "general_response: 已返回通用说明")
         return {
             "result": TriageResult(
                 category=decision.category,

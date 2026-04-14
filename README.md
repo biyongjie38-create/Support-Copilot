@@ -7,11 +7,14 @@ Support Copilot 是一个后端客服 Agent 原型项目，用来展示两个核
 
 项目刻意聚焦后端 Agent 能力，不包含前端页面、用户登录、后台任务队列、Celery 或 Redis。
 
+
+
+
 ## 功能亮点
 
 - 基于 FastAPI 的后端 API，包含类型化请求和响应模型
 - 使用 PostgreSQL + pgvector 存储和检索客服知识库
-- 默认支持本地 fallback 模式，无需外部 LLM Key 也能演示核心流程
+- 支持在无 LLM 时启动服务；此时 LangGraph 分诊 Agent 会明确返回“LLM 不可用，等待处理”
 - 支持 OpenAI-compatible 模型配置，用于真实模型调用
 - LangGraph 分诊流程会返回图执行轨迹，方便观察路由路径
 - RAG 无相关证据时会返回 no-answer，不编造客服政策
@@ -20,14 +23,18 @@ Support Copilot 是一个后端客服 Agent 原型项目，用来展示两个核
 
 ## 架构
 
+### LangGraph 分诊流程图
+
+下图对应 `LangGraphTriageAgent` 的实际路由流程：先接收用户问题，再由 LLM 理解用户意图、结合知识库候选决定进入知识库回答、人工升级或普通说明，最后统一输出结果。
+
 ```mermaid
 flowchart TD
-    intake["intake: 接收客服请求"] --> classify["classify: 判断类别、优先级和动作"]
-    classify --> route["route: 选择处理路径"]
+    intake["intake: 接收用户问题"] --> classify["classify: LLM 理解用户意图并给出初判"]
+    classify --> route["route: LLM 结合知识候选决定处理路径"]
     route -->|answer| rag_answer["rag_answer: 调用 Agentic RAG"]
-    route -->|escalate| escalate["escalate: 生成转人工摘要"]
-    route -->|general| general_response["general_response: 返回范围说明"]
-    rag_answer --> final["final: 统一响应"]
+    route -->|escalate| escalate["escalate: 生成人工升级摘要"]
+    route -->|general| general_response["general_response: 给出范围说明或等待处理"]
+    rag_answer --> final["final: 输出统一结果"]
     escalate --> final
     general_response --> final
 ```
@@ -53,7 +60,7 @@ flowchart TD
 |   |   |-- agent/              # Agentic RAG 和 LangGraph 分诊 Agent
 |   |   |-- data/               # 内置 demo 客服知识库
 |   |   |-- config.py           # 环境变量配置
-|   |   |-- llm_router.py       # LLM 与 fallback 路由
+|   |   |-- llm_router.py       # LLM 路由与 RAG 答案生成
 |   |   |-- main.py             # FastAPI 应用入口
 |   |   |-- models.py           # 内部数据模型
 |   |   |-- postgres_store.py   # pgvector 与内存知识库实现
@@ -141,7 +148,7 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8000/agents/triage/graph"
 
 ## LLM 配置
 
-`.env.example` 默认设置为 `LLM_ENABLE_CALLS=false`。在这个模式下，项目会使用本地 fallback 逻辑，不会调用外部模型，因此没有 API Key 也可以运行 demo。
+`.env.example` 默认设置为 `LLM_ENABLE_CALLS=false`。在这个模式下，项目不会调用外部模型，因此没有 API Key 也可以启动服务并演示健康检查、知识库导入和直接 RAG 查询；但 LangGraph 分诊 Agent 不会退回本地规则，而是明确返回“当前 LLM 不可用，请稍后重试或等待人工处理”。
 
 如果要接入 OpenAI-compatible 模型，可以修改 `.env`：
 

@@ -41,7 +41,7 @@ def build_ragas_metrics() -> list[Any]:
 def serialize_ragas_result(result: Any) -> dict[str, Any]:
     try:
         return dict(result)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, KeyError):
         pass
     try:
         return {"scores": result.to_pandas().to_dict(orient="records")}

@@ -27,15 +27,25 @@ def tokenize_text(text: str) -> list[str]:
     return latin_tokens + chinese_chars + chinese_bigrams + chinese_trigrams
 
 
-def text_embedding_literal(text: str, dimensions: int = 1536) -> str:
+def text_embedding_vector(text: str, dimensions: int = 1536) -> list[float]:
     vector = [0.0] * dimensions
     for token in tokenize_text(text):
         digest = hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest()
         index = int.from_bytes(digest[:4], "big") % dimensions
         vector[index] += 1.0
     magnitude = sum(value * value for value in vector) ** 0.5 or 1.0
-    normalized = [round(value / magnitude, 6) for value in vector]
-    return "[" + ",".join(str(value) for value in normalized) + "]"
+    return [round(value / magnitude, 6) for value in vector]
+
+
+def text_embedding_literal(text: str, dimensions: int = 1536) -> str:
+    vector = text_embedding_vector(text, dimensions=dimensions)
+    return "[" + ",".join(str(value) for value in vector) + "]"
+
+
+def cosine_similarity(left: list[float], right: list[float]) -> float:
+    if len(left) != len(right):
+        return 0.0
+    return round(sum(a * b for a, b in zip(left, right)), 4)
 
 
 def chunk_text(content: str, size: int = 900) -> list[str]:
@@ -100,6 +110,7 @@ class InMemoryKnowledgeStore:
         return sorted(self.documents.values(), key=lambda item: item.title)
 
     def search_knowledge(self, query: str, limit: int = 5) -> list[SearchResult]:
+        query_embedding = text_embedding_vector(query)
         scored = [
             SearchResult(
                 chunk_id=chunk.chunk_id,
@@ -107,7 +118,11 @@ class InMemoryKnowledgeStore:
                 title=chunk.title,
                 source=chunk.source,
                 content=chunk.content,
-                score=score_text_relevance(query, f"{chunk.title}\n{chunk.content}", 0.0),
+                score=score_text_relevance(
+                    query,
+                    f"{chunk.title}\n{chunk.content}",
+                    cosine_similarity(query_embedding, text_embedding_vector(f"{chunk.title}\n{chunk.content}")),
+                ),
             )
             for chunk in self.chunks
         ]
