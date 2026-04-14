@@ -201,12 +201,3 @@ pytest backend
 ```
 
 当前测试覆盖 RAG 命中引用、无答案处理、知识库问题路由和人工升级路由。
-
-## 注意事项
-
-- `.env`、`.venv/`、缓存目录、构建产物和日志目录不会提交到 Git。
-- 如果复用了旧数据库 volume，schema 变更后可能需要手动重新执行初始化脚本：
-
-```powershell
-docker compose exec -T postgres psql -U support -d support_copilot -f /docker-entrypoint-initdb.d/001_init_pgvector.sql
-```
