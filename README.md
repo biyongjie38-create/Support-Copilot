@@ -213,6 +213,6 @@ pytest backend
 <img width="2489" height="1403" alt="LangGraph流程演示" src="https://github.com/user-attachments/assets/041d6068-f1a2-4f8e-b9a9-0e96293f4b59" />
 
 ### 视频演示效果
-
+【Support Copilot演示】 https://www.bilibili.com/video/BV1EAQgBXEvm/?share_source=copy_web&vd_source=912f8836f6e7d0e13807d6f5c7c58998
 
 
