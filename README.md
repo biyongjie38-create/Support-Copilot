@@ -201,3 +201,18 @@ pytest backend
 ```
 
 当前测试覆盖 RAG 命中引用、无答案处理、知识库问题路由和人工升级路由。
+
+
+## 演示效果
+
+### 功能图片效果
+
+<img width="2489" height="1403" alt="导入知识库演示" src="https://github.com/user-attachments/assets/7b7b7ebe-2b05-4ba7-a737-3e144ed6d69c" />
+<img width="2489" height="1403" alt="Agentic_RAG演示" src="https://github.com/user-attachments/assets/36e3f71c-d7fe-4e67-ba39-ccc0731d6c31" />
+<img width="2489" height="1403" alt="LangGraph分诊演示" src="https://github.com/user-attachments/assets/8b4fae37-cf28-4ff1-9e56-bc8d48090645" />
+<img width="2489" height="1403" alt="LangGraph流程演示" src="https://github.com/user-attachments/assets/041d6068-f1a2-4f8e-b9a9-0e96293f4b59" />
+
+### 视频演示效果
+
+
+
