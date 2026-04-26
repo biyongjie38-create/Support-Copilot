@@ -71,9 +71,6 @@ flowchart TD
 |   `-- requirements.txt
 |-- db/
 |   `-- 001_init_pgvector.sql   # 数据库表结构和向量索引
-|-- docs/
-|   |-- MODULES.md
-|   `-- RUNBOOK.md
 |-- docker-compose.yml
 `-- README.md
 ```
