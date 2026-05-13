@@ -10,10 +10,11 @@ class Settings(BaseSettings):
     llm_provider: str = "ollama"
     llm_chat_model: str = "qwen2.5:7b"
     llm_embedding_model: str = "text-embedding-3-small"
+    llm_embedding_dimensions: int = 1536
     llm_api_key: str | None = None
     llm_base_url: str | None = "http://localhost:11434/v1"
     llm_enable_calls: bool = False
-    rag_min_score: float = 0.18
+    rag_min_score: float = 0.30
     rag_max_context_chars: int = 5000
 
     model_config = SettingsConfigDict(

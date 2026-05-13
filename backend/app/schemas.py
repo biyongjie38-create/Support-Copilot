@@ -49,3 +49,8 @@ class TriageInvokeResponse(BaseModel):
 class TriageGraphResponse(BaseModel):
     mermaid: str
     nodes: dict[str, str]
+
+
+class RagGraphResponse(BaseModel):
+    mermaid: str
+    nodes: dict[str, str]

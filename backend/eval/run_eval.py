@@ -67,12 +67,32 @@ def main() -> None:
 
     ragas_samples: list[dict[str, Any]] = []
     skipped_cases: list[dict[str, str]] = []
+    case_failures: list[dict[str, str]] = []
     total_latency_ms = 0.0
 
     for case in load_cases():
         start = time.perf_counter()
         result = triage_agent.invoke(case["question"])
         total_latency_ms += (time.perf_counter() - start) * 1000
+
+        if result.action != case["expected_action"]:
+            case_failures.append(
+                {
+                    "question": case["question"],
+                    "expected": case["expected_action"],
+                    "actual": result.action,
+                }
+            )
+
+        expected_source = case.get("expected_source")
+        if expected_source and not any(citation.source == expected_source for citation in result.citations):
+            case_failures.append(
+                {
+                    "question": case["question"],
+                    "expected": expected_source,
+                    "actual": ",".join(citation.source for citation in result.citations) or "no_citations",
+                }
+            )
 
         if case["expected_action"] != "answer":
             skipped_cases.append({"question": case["question"], "reason": "non_rag_case"})
@@ -104,6 +124,7 @@ def main() -> None:
         "ragas_scores": serialize_ragas_result(ragas_result),
         "ragas_sample_count": len(ragas_samples),
         "skipped_non_rag_cases": skipped_cases,
+        "case_failures": case_failures,
         "average_agent_latency_ms": round(total_latency_ms / max(len(ragas_samples) + len(skipped_cases), 1), 2),
     }
     print(json.dumps(report, ensure_ascii=False, indent=2))

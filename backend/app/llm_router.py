@@ -15,6 +15,37 @@ from app.models import SearchResult, TriageDecision
 TRIAGE_ACTIONS = {"answer", "escalate", "general"}
 LLM_UNAVAILABLE_REASON = "llm_unavailable"
 LLM_CALL_FAILED_REASON = "llm_call_failed"
+ESCALATE_KEYWORDS = (
+    "转人工",
+    "人工",
+    "投诉",
+    "账号被盗",
+    "安全队列",
+    "支付异常",
+    "严重故障",
+    "p0",
+    "重复扣费",
+)
+SUPPORT_KEYWORDS = (
+    "密码",
+    "登录",
+    "锁定",
+    "退款",
+    "扣费",
+    "账单",
+    "发票",
+    "导出",
+    "下载",
+    "api",
+    "429",
+    "限流",
+    "订阅",
+    "自动续费",
+    "删除账号",
+    "隐私",
+    "故障",
+    "报错",
+)
 
 
 def build_chat_model() -> ChatOpenAI | None:
@@ -56,6 +87,64 @@ def is_llm_unavailable_decision(decision: TriageDecision) -> bool:
     }
 
 
+def contains_any(message: str, keywords: tuple[str, ...]) -> bool:
+    normalized = message.lower()
+    return any(keyword.lower() in normalized for keyword in keywords)
+
+
+def heuristic_triage_decision(message: str) -> TriageDecision:
+    if contains_any(message, ESCALATE_KEYWORDS):
+        return TriageDecision(
+            category="human_escalation",
+            priority="high",
+            action="escalate",
+            reason="local heuristic detected explicit escalation or high-risk support request",
+        )
+    if contains_any(message, SUPPORT_KEYWORDS):
+        priority = "high" if contains_any(message, ("故障", "报错", "支付异常", "账号被盗", "p0")) else "normal"
+        return TriageDecision(
+            category="support_question",
+            priority=priority,
+            action="answer",
+            reason="local heuristic detected an in-scope support question",
+        )
+    return TriageDecision(
+        category="general",
+        priority="low",
+        action="general",
+        reason="local heuristic detected a general or out-of-scope question",
+    )
+
+
+def heuristic_route_decision(
+    message: str,
+    preliminary_decision: TriageDecision,
+    documents: list[SearchResult],
+) -> TriageDecision:
+    if contains_any(message, ESCALATE_KEYWORDS):
+        return TriageDecision(
+            category=preliminary_decision.category if preliminary_decision.category != "llm_unavailable" else "human_escalation",
+            priority="high",
+            action="escalate",
+            reason="local router kept explicit human escalation path",
+        )
+    if documents:
+        return TriageDecision(
+            category=preliminary_decision.category if preliminary_decision.category != "llm_unavailable" else "support_question",
+            priority=preliminary_decision.priority if preliminary_decision.priority != "low" else "normal",
+            action="answer",
+            reason="local router found relevant knowledge candidates",
+        )
+    if preliminary_decision.action == "escalate":
+        return preliminary_decision
+    return TriageDecision(
+        category=preliminary_decision.category if preliminary_decision.category != "llm_unavailable" else "general",
+        priority=preliminary_decision.priority if preliminary_decision.priority != "high" else "normal",
+        action="general",
+        reason="local router found no relevant knowledge candidates",
+    )
+
+
 class RagAnswerComposer:
     def __init__(self, chain: Runnable | None = None) -> None:
         self.chain = chain or build_rag_answer_chain()
@@ -81,7 +170,7 @@ class TriageClassifier:
 
     def classify(self, message: str) -> TriageDecision:
         if not self.available or self.chain is None:
-            return unavailable_triage_decision()
+            return heuristic_triage_decision(message)
         try:
             payload = self.chain.invoke({"message": message})
             if not isinstance(payload, dict):
@@ -116,9 +205,9 @@ class TriageRouter:
         documents: list[SearchResult],
     ) -> TriageDecision:
         if is_llm_unavailable_decision(preliminary_decision):
-            return preliminary_decision
+            return heuristic_route_decision(message, heuristic_triage_decision(message), documents)
         if not self.available or self.chain is None:
-            return unavailable_triage_decision()
+            return heuristic_route_decision(message, preliminary_decision, documents)
         payload = {
             "message": message,
             "preliminary_decision": triage_payload_from_decision(preliminary_decision),

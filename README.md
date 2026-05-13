@@ -2,7 +2,7 @@
 
 Support Copilot 是一个后端客服 Agent 原型项目，用来展示两个核心工作流：
 
-- Agentic RAG Agent：从客服知识库检索相关内容，过滤低相关度结果，返回带引用来源的回答；当知识库没有覆盖问题时，会明确拒绝猜测。
+- Agentic RAG Agent：通过 `SupportRagGraph` 决定检索、调用知识库工具、评分证据、必要时改写 query，并返回带引用来源的回答；当知识库没有覆盖问题时，会明确拒绝猜测。
 - LangGraph Triage Agent：对客服请求做分类和分诊，并把问题路由到 RAG 回答、人工升级或普通范围说明。
 
 项目刻意聚焦后端 Agent 能力，不包含前端页面、用户登录、后台任务队列、Celery 或 Redis。
@@ -14,7 +14,7 @@ Support Copilot 是一个后端客服 Agent 原型项目，用来展示两个核
 
 - 基于 FastAPI 的后端 API，包含类型化请求和响应模型
 - 使用 PostgreSQL + pgvector 存储和检索客服知识库
-- 支持在无 LLM 时启动服务；此时 LangGraph 分诊 Agent 会明确返回“LLM 不可用，等待处理”
+- 支持在无 LLM 时启动服务；此时 RAG 使用本地检索与 grounded fallback，分诊 Agent 使用本地启发式路由
 - 支持 OpenAI-compatible 模型配置，用于真实模型调用
 - LangGraph 分诊流程会返回图执行轨迹，方便观察路由路径
 - RAG 无相关证据时会返回 no-answer，不编造客服政策
@@ -38,6 +38,16 @@ flowchart TD
     escalate --> final
     general_response --> final
 ```
+
+### SupportRagGraph RAG 流程
+
+RAG Agent 内部使用 compiled LangGraph，而不是手写流程图。核心节点为：
+
+```text
+generate_query_or_respond -> retrieve -> grade_documents -> rewrite_query -> generate_answer -> final
+```
+
+运行时 state 会保留 `messages`、`retrieved_docs`、`graded_docs`、`rewrite_count`、`route_reason`、`citations` 和 `no_answer_reason`，便于调试检索、拒答与改写路径。
 
 ## 技术栈
 
@@ -143,15 +153,23 @@ Invoke-RestMethod `
 Invoke-RestMethod -Uri "http://127.0.0.1:8000/agents/triage/graph"
 ```
 
+查看 RAG 图元数据：
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/agents/rag/graph"
+```
+
 ## LLM 配置
 
-`.env.example` 默认设置为 `LLM_ENABLE_CALLS=false`。在这个模式下，项目不会调用外部模型，因此没有 API Key 也可以启动服务并演示健康检查、知识库导入和直接 RAG 查询；但 LangGraph 分诊 Agent 不会退回本地规则，而是明确返回“当前 LLM 不可用，请稍后重试或等待人工处理”。
+`.env.example` 默认设置为 `LLM_ENABLE_CALLS=false`。在这个模式下，项目不会调用外部模型，因此没有 API Key 也可以启动服务并演示健康检查、知识库导入、RAG 查询和本地启发式分诊。打开 `LLM_ENABLE_CALLS=true` 并配置模型后，RAG 可使用真实 embedding，分诊与回答节点可调用 OpenAI-compatible 模型。
 
 如果要接入 OpenAI-compatible 模型，可以修改 `.env`：
 
 ```text
 LLM_PROVIDER=qwen
 LLM_CHAT_MODEL=qwen3.5-flash
+LLM_EMBEDDING_MODEL=text-embedding-3-small
+LLM_EMBEDDING_DIMENSIONS=1536
 LLM_API_KEY=your-api-key
 LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 LLM_ENABLE_CALLS=true

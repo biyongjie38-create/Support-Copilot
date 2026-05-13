@@ -1,6 +1,9 @@
 import pytest
+import json
+from pathlib import Path
 
 from app.agent.rag import AgenticRagAgent
+from app.agent.rag_graph import SupportRagGraph
 from app.agent.triage import LangGraphTriageAgent
 from app.config import get_settings
 from app.data.demo_knowledge import DEMO_KNOWLEDGE
@@ -20,6 +23,10 @@ def build_store() -> InMemoryKnowledgeStore:
     store = InMemoryKnowledgeStore()
     store.ingest_documents(DEMO_KNOWLEDGE)
     return store
+
+
+def load_eval_cases():
+    return json.loads((Path(__file__).parents[1] / "eval" / "eval_cases.json").read_text(encoding="utf-8"))
 
 
 class StubClassifier:
@@ -64,7 +71,7 @@ def test_rag_hit_returns_citation():
 
 
 def test_rag_api_429_question_returns_api_rate_limit_citation():
-    result = AgenticRagAgent(build_store()).query("API 429 meaning")
+    result = AgenticRagAgent(build_store()).query("API 一直返回 429 是什么意思？")
 
     assert result.no_answer_reason is None
     assert result.citations
@@ -79,12 +86,12 @@ def test_rag_no_hit_does_not_hallucinate():
     assert "知识库未覆盖" in result.answer
 
 
-def test_triage_returns_waiting_message_when_llm_unavailable():
+def test_triage_uses_local_router_when_llm_is_disabled():
     result = LangGraphTriageAgent(build_store()).invoke("API 429 meaning")
 
-    assert result.action == "general"
-    assert result.citations == []
-    assert "LLM 不可用" in result.answer
+    assert result.action == "answer"
+    assert result.citations
+    assert any("api-rate-limit" in citation.source for citation in result.citations)
 
 
 def test_triage_uses_router_decision_for_knowledge_question():
@@ -160,3 +167,41 @@ def test_triage_routes_with_the_same_rag_threshold_used_for_final_answer():
 
     assert result.action == "general"
     assert result.citations == []
+
+
+@pytest.mark.parametrize("case", [case for case in load_eval_cases() if case["expected_action"] == "answer"])
+def test_rag_eval_answer_cases_retrieve_expected_source(case):
+    result = AgenticRagAgent(build_store()).query(case["question"])
+
+    assert result.no_answer_reason is None
+    assert result.citations
+    assert any(case["expected_source"] == citation.source for citation in result.citations)
+
+
+@pytest.mark.parametrize("case", load_eval_cases())
+def test_triage_eval_cases_follow_expected_action_and_source(case):
+    result = LangGraphTriageAgent(build_store()).invoke(case["question"])
+
+    assert result.action == case["expected_action"]
+    if case["expected_source"]:
+        assert any(case["expected_source"] == citation.source for citation in result.citations)
+    else:
+        assert result.citations == []
+
+
+def test_support_rag_graph_preserves_retrieval_state_and_metadata():
+    graph = SupportRagGraph(build_store())
+
+    state = graph.invoke("API 一直返回 429 是什么意思？")
+    mermaid, nodes = graph.graph_metadata()
+
+    assert state["retrieved_docs"]
+    assert state["graded_docs"]
+    assert state["citations"]
+    assert state["no_answer_reason"] is None
+    assert state["rewrite_count"] == 0
+    assert state["route_reason"]
+    assert "generate_query_or_respond" in mermaid
+    assert "retrieve" in mermaid
+    assert "grade_documents" in mermaid
+    assert "generate_query_or_respond" in nodes

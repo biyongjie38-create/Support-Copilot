@@ -8,19 +8,7 @@ from langgraph.graph import END, START, StateGraph
 from app.agent.rag import AgenticRagAgent
 from app.llm_router import TriageClassifier, TriageRouter, is_llm_unavailable_decision
 from app.models import TriageDecision, TriageResult
-from app.postgres_store import KnowledgeStore
-
-
-TRIAGE_GRAPH_MERMAID = """flowchart TD
-    intake["intake: 接收用户问题"] --> classify["classify: LLM 理解用户意图并给出初判"]
-    classify --> route["route: LLM 结合知识候选决定处理路径"]
-    route -->|answer| rag_answer["rag_answer: 调用 Agentic RAG"]
-    route -->|escalate| escalate["escalate: 生成人工升级摘要"]
-    route -->|general| general_response["general_response: 给出范围说明或等待处理"]
-    rag_answer --> final["final: 输出统一结果"]
-    escalate --> final
-    general_response --> final
-"""
+from app.postgres_store import InMemoryKnowledgeStore, KnowledgeStore
 
 
 TRIAGE_GRAPH_NODES = {
@@ -58,6 +46,9 @@ class LangGraphTriageAgent:
     def invoke(self, message: str) -> TriageResult:
         state = self.graph.invoke({"message": message, "graph_trace": []})
         return state["result"]
+
+    def graph_metadata(self) -> tuple[str, dict[str, str]]:
+        return self.graph.get_graph().draw_mermaid(), TRIAGE_GRAPH_NODES
 
     def _build_graph(self):
         graph = StateGraph(TriageState)
@@ -176,4 +167,4 @@ class LangGraphTriageAgent:
 
 
 def graph_metadata() -> tuple[str, dict[str, str]]:
-    return TRIAGE_GRAPH_MERMAID, TRIAGE_GRAPH_NODES
+    return LangGraphTriageAgent(InMemoryKnowledgeStore()).graph_metadata()

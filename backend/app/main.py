@@ -4,13 +4,15 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, status
 
 from app.agent.rag import AgenticRagAgent
-from app.agent.triage import LangGraphTriageAgent, graph_metadata
+from app.agent.rag_graph import SupportRagGraph
+from app.agent.triage import LangGraphTriageAgent
 from app.config import get_settings
 from app.data.demo_knowledge import DEMO_KNOWLEDGE
 from app.postgres_store import KnowledgeStore, PgVectorStore
 from app.schemas import (
     HealthResponse,
     KnowledgeIngestResponse,
+    RagGraphResponse,
     RagQueryRequest,
     RagQueryResponse,
     TriageGraphResponse,
@@ -56,14 +58,19 @@ def create_app(store: KnowledgeStore | None = None) -> FastAPI:
         result = AgenticRagAgent(store).query(payload.question, top_k=payload.top_k)
         return asdict(result)
 
+    @app.get("/agents/rag/graph", response_model=RagGraphResponse)
+    def rag_graph(store: StoreDep) -> RagGraphResponse:
+        mermaid, nodes = SupportRagGraph(store).graph_metadata()
+        return RagGraphResponse(mermaid=mermaid, nodes=nodes)
+
     @app.post("/agents/triage/invoke", response_model=TriageInvokeResponse)
     def invoke_triage(payload: TriageInvokeRequest, store: StoreDep) -> dict:
         result = LangGraphTriageAgent(store).invoke(payload.message)
         return asdict(result)
 
     @app.get("/agents/triage/graph", response_model=TriageGraphResponse)
-    def triage_graph() -> TriageGraphResponse:
-        mermaid, nodes = graph_metadata()
+    def triage_graph(store: StoreDep) -> TriageGraphResponse:
+        mermaid, nodes = LangGraphTriageAgent(store).graph_metadata()
         return TriageGraphResponse(mermaid=mermaid, nodes=nodes)
 
     return app
